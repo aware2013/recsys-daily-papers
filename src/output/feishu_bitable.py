@@ -1,6 +1,5 @@
 """飞书多维表格 Bitable 写入模块"""
 
-import json
 import logging
 import os
 from typing import List
@@ -14,9 +13,26 @@ logger = logging.getLogger(__name__)
 FEISHU_AUTH_URL = "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal"
 FEISHU_BITABLE_API = "https://open.feishu.cn/open-apis/bitable/v1"
 
+TABLE_NAME = "论文日报"
+TABLE_FIELDS = [
+    {"field_name": "日期", "type": 1},  # text
+    {"field_name": "序号", "type": 2},  # number
+    {"field_name": "分类", "type": 3},  # text (首次后可手动改为多选)
+    {"field_name": "中文标题", "type": 1},  # text
+    {"field_name": "英文标题", "type": 1},  # text
+    {"field_name": "评分", "type": 2},  # number
+    {"field_name": "核心贡献", "type": 1},  # text
+    {"field_name": "一句话推荐", "type": 1},  # text
+    {"field_name": "适用场景", "type": 1},  # text
+    {"field_name": "arXiv", "type": 15},  # url
+    {"field_name": "引用数", "type": 2},  # number
+    {"field_name": "作者", "type": 1},  # text
+    {"field_name": "作者单位", "type": 1},  # text
+]
+
 
 def sync_to_bitable(papers: List[Paper], date_str: str) -> bool:
-    """将论文列表写入飞书多维表格"""
+    """将论文列表追加到飞书多维表格"""
     app_id = os.environ.get("FEISHU_APP_ID", "")
     app_secret = os.environ.get("FEISHU_APP_SECRET", "")
     app_token = os.environ.get("FEISHU_BITABLE_APP_TOKEN", "")
@@ -27,12 +43,12 @@ def sync_to_bitable(papers: List[Paper], date_str: str) -> bool:
 
     try:
         token = _get_tenant_token(app_id, app_secret)
-        table_id = _ensure_table(token, app_token, date_str)
+        table_id = _ensure_table(token, app_token)
 
         records = _build_records(papers, date_str)
         _batch_create_records(token, app_token, table_id, records)
 
-        logger.info(f"Bitable: {len(records)} records written to table {table_id}")
+        logger.info(f"Bitable: {len(records)} records appended to '{TABLE_NAME}'")
         return True
 
     except Exception as e:
@@ -53,11 +69,10 @@ def _get_tenant_token(app_id: str, app_secret: str) -> str:
     return data["tenant_access_token"]
 
 
-def _ensure_table(token: str, app_token: str, date_str: str) -> str:
-    """查找今日表格，不存在则创建"""
+def _ensure_table(token: str, app_token: str) -> str:
+    """查找论文日报表，不存在则创建，存在则补充缺失字段"""
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 
-    # 列出现有表格
     resp = httpx.get(
         f"{FEISHU_BITABLE_API}/apps/{app_token}/tables",
         headers=headers,
@@ -69,11 +84,13 @@ def _ensure_table(token: str, app_token: str, date_str: str) -> str:
     if data.get("code") != 0:
         raise RuntimeError(f"List tables failed: {data}")
 
-    table_name = f"论文日报 {date_str}"
-
+    # 查找已有表
     for item in data.get("data", {}).get("items", []):
-        if item.get("name") == table_name:
-            return item["table_id"]
+        if item.get("name") == TABLE_NAME:
+            table_id = item["table_id"]
+            logger.info(f"Bitable: using existing table '{TABLE_NAME}'")
+            _ensure_fields(token, app_token, table_id)
+            return table_id
 
     # 创建新表
     resp = httpx.post(
@@ -81,22 +98,9 @@ def _ensure_table(token: str, app_token: str, date_str: str) -> str:
         headers=headers,
         json={
             "table": {
-                "name": table_name,
+                "name": TABLE_NAME,
                 "default_view_name": "全部论文",
-                "fields": [
-                    {"field_name": "序号", "type": 2},  # number
-                    {"field_name": "分类", "type": 3},  # text (暂用文本，首次运行后可改成单选)
-                    {"field_name": "中文标题", "type": 1},  # text
-                    {"field_name": "英文标题", "type": 1},  # text
-                    {"field_name": "评分", "type": 2},  # number
-                    {"field_name": "核心贡献", "type": 1},  # text
-                    {"field_name": "一句话推荐", "type": 1},  # text
-                    {"field_name": "适用场景", "type": 1},  # text
-                    {"field_name": "arXiv", "type": 15},  # url
-                    {"field_name": "引用数", "type": 2},  # number
-                    {"field_name": "作者", "type": 1},  # text
-                    {"field_name": "作者单位", "type": 1},  # text
-                ],
+                "fields": TABLE_FIELDS,
             }
         },
         timeout=10.0,
@@ -105,7 +109,34 @@ def _ensure_table(token: str, app_token: str, date_str: str) -> str:
     data = resp.json()
     if data.get("code") != 0:
         raise RuntimeError(f"Create table failed: {data}")
+    logger.info(f"Bitable: created new table '{TABLE_NAME}'")
     return data["data"]["table_id"]
+
+
+def _ensure_fields(token: str, app_token: str, table_id: str):
+    """补充表中缺失的字段"""
+    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    resp = httpx.get(
+        f"{FEISHU_BITABLE_API}/apps/{app_token}/tables/{table_id}/fields",
+        headers=headers,
+        params={"page_size": 30},
+        timeout=10.0,
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    if data.get("code") != 0:
+        return
+
+    existing = {f["field_name"] for f in data.get("data", {}).get("items", [])}
+    for field_def in TABLE_FIELDS:
+        if field_def["field_name"] not in existing:
+            httpx.post(
+                f"{FEISHU_BITABLE_API}/apps/{app_token}/tables/{table_id}/fields",
+                headers=headers,
+                json=field_def,
+                timeout=10.0,
+            )
+            logger.info(f"Bitable: added missing field '{field_def['field_name']}'")
 
 
 def _build_records(papers: List[Paper], date_str: str) -> List[dict]:
@@ -113,6 +144,7 @@ def _build_records(papers: List[Paper], date_str: str) -> List[dict]:
     for i, p in enumerate(papers, 1):
         records.append({
             "fields": {
+                "日期": date_str,
                 "序号": i,
                 "分类": p.category or "其他",
                 "中文标题": (p.cn_title or p.title)[:200],
@@ -136,7 +168,6 @@ def _build_records(papers: List[Paper], date_str: str) -> List[dict]:
 def _batch_create_records(token: str, app_token: str, table_id: str, records: List[dict]):
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 
-    # 分批写入，每批 20 条
     batch_size = 20
     for i in range(0, len(records), batch_size):
         batch = records[i : i + batch_size]
