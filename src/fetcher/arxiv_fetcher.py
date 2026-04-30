@@ -59,36 +59,37 @@ def fetch_papers() -> List[Paper]:
         except Exception as e:
             logger.error(f"arXiv query failed for category={category}: {e}")
 
-    # 额外用 GROWTH_KEYWORDS 在 cs.LG 中搜索营销增长论文
+    # 额外用 GROWTH_KEYWORDS 在 cs.LG + stat.ML 中搜索营销增长论文
     for kw in GROWTH_KEYWORDS:
-        try:
-            search = arxiv.Search(
-                query=f'cat:cs.LG AND abs:"{kw}"',
-                max_results=20,
-                sort_by=arxiv.SortCriterion.SubmittedDate,
-                sort_order=arxiv.SortOrder.Descending,
-            )
-            for result in client.results(search):
-                updated = result.updated.replace(tzinfo=timezone.utc)
-                if updated < cutoff:
-                    continue
-                arxiv_id = _extract_id(result.entry_id)
-                if arxiv_id in all_papers:
-                    continue
-                paper = Paper(
-                    arxiv_id=arxiv_id,
-                    title=result.title.strip(),
-                    authors=[a.name for a in result.authors],
-                    abstract=result.summary.strip(),
-                    categories=[c for c in result.categories],
-                    published=result.published.replace(tzinfo=timezone.utc) if result.published else None,
-                    updated=updated,
-                    pdf_url=result.pdf_url,
-                    abs_url=result.entry_id,
+        for cat in ["cs.LG", "stat.ML"]:
+            try:
+                search = arxiv.Search(
+                    query=f'cat:{cat} AND abs:"{kw}"',
+                    max_results=20,
+                    sort_by=arxiv.SortCriterion.SubmittedDate,
+                    sort_order=arxiv.SortOrder.Descending,
                 )
-                all_papers[arxiv_id] = paper
-        except Exception as e:
-            logger.warning(f"Growth keyword search failed for '{kw}': {e}")
+                for result in client.results(search):
+                    updated = result.updated.replace(tzinfo=timezone.utc)
+                    if updated < cutoff:
+                        continue
+                    arxiv_id = _extract_id(result.entry_id)
+                    if arxiv_id in all_papers:
+                        continue
+                    paper = Paper(
+                        arxiv_id=arxiv_id,
+                        title=result.title.strip(),
+                        authors=[a.name for a in result.authors],
+                        abstract=result.summary.strip(),
+                        categories=[c for c in result.categories],
+                        published=result.published.replace(tzinfo=timezone.utc) if result.published else None,
+                        updated=updated,
+                        pdf_url=result.pdf_url,
+                        abs_url=result.entry_id,
+                    )
+                    all_papers[arxiv_id] = paper
+            except Exception as e:
+                logger.warning(f"Growth keyword search failed for '{kw}' in {cat}: {e}")
 
     papers = list(all_papers.values())
     logger.info(f"arXiv fetch complete: {len(papers)} papers (lookback={LOOKBACK_HOURS}h)")

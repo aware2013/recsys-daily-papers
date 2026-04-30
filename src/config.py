@@ -7,13 +7,18 @@
 ARXIV_CATEGORIES = ["cs.IR", "cs.LG", "stat.ML", "cs.AI", "econ.GN"]
 
 SEARCH_QUERIES = {
-    # 推荐系统
-    "cs.IR": '(abs:"recommendation" OR abs:"recommender" OR abs:"collaborative filtering" OR abs:"ranking" OR abs:"retrieval" OR ti:"recommendation" OR ti:"recommender")',
-    "cs.LG": '(abs:"recommendation" OR abs:"recommender" OR abs:"collaborative filtering" OR abs:"CTR prediction" OR abs:"click-through rate" OR abs:"sequential recommendation" OR abs:"session-based" OR ti:"recommendation")',
-    "stat.ML": '(abs:"recommendation" OR abs:"collaborative" OR abs:"personalization" OR abs:"ranking")',
-    "cs.AI": '(abs:"recommendation system" OR abs:"recommender system" OR abs:"personalization")',
-    # 营销增长 & 发券补贴
-    "econ.GN": '(abs:"coupon" OR abs:"pricing" OR abs:"subsidy" OR abs:"discount" OR abs:"promotion" OR abs:"incentive" OR abs:"customer acquisition" OR abs:"customer retention" OR abs:"uplift" OR abs:"causal" OR abs:"marketing")',
+    # 推荐系统 + 营销增长（cs.IR 两方向都搜）
+    "cs.IR": '(abs:"recommendation" OR abs:"recommender" OR abs:"collaborative filtering" OR abs:"ranking" OR abs:"retrieval" OR abs:"coupon" OR abs:"pricing" OR abs:"subsidy" OR abs:"uplift" OR abs:"marketing" OR ti:"recommendation" OR ti:"recommender")',
+    # cs.LG 覆盖推荐 + CTR + 营销增长
+    "cs.LG": '(abs:"recommendation" OR abs:"recommender" OR abs:"CTR prediction" OR abs:"click-through rate" OR abs:"sequential recommendation" OR abs:"coupon" OR abs:"pricing" OR abs:"subsidy" OR abs:"uplift" OR abs:"churn" OR abs:"customer lifetime value" OR abs:"treatment effect" OR abs:"causal" AND abs:"marketing" OR ti:"recommendation")',
+    # stat.ML 覆盖推荐 + 因果推断/营销
+    "stat.ML": '(abs:"recommendation" OR abs:"ranking" OR abs:"causal" OR abs:"treatment effect" OR abs:"uplift" OR abs:"A/B test")',
+    # cs.AI 覆盖推荐 + 营销
+    "cs.AI": '(abs:"recommendation system" OR abs:"recommender system" OR abs:"coupon" OR abs:"subsidy" OR abs:"pricing" OR abs:"marketing" AND abs:"machine learning")',
+    # 营销增长专门搜索
+    "econ.GN": '(abs:"coupon" OR abs:"pricing" OR abs:"subsidy" OR abs:"discount" OR abs:"promotion" OR abs:"incentive" OR abs:"uplift" OR abs:"causal" OR abs:"marketing")',
+    # 新增：cs.CY (Computers and Society) 有时也发营销科技论文
+    "cs.CY": '(abs:"marketing" OR abs:"coupon" OR abs:"promotion" OR abs:"pricing" OR abs:"incentive")',
 }
 
 # 营销增长补充关键词（在 cs.LG/cs.IR 中也会搜）
