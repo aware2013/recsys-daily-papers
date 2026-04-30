@@ -20,6 +20,7 @@ class Paper:
     # Semantic Scholar 补充
     citation_count: int = 0
     influential_citation_count: int = 0
+    affiliations: str = ""  # 作者单位（如 "Alibaba Group, Tsinghua University"）
 
     # LLM 处理结果 (中文)
     cn_title: str = ""

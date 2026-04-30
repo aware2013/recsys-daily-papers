@@ -18,6 +18,7 @@ from src.processor.llm_processor import process_papers as llm_process
 from src.processor.ranker import rank_papers
 from src.output.markdown_generator import generate_daily_report, update_index
 from src.output.feishu_notifier import send_notification
+from src.output.feishu_bitable import sync_to_bitable
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("main")
@@ -82,8 +83,9 @@ def run(date_str: str = "", dry_run: bool = False):
     # 飞书推送
     if not dry_run:
         send_notification(digest)
+        sync_to_bitable(papers, date_str)
     else:
-        logger.info("[DRY RUN] Skipping Feishu push and git commit")
+        logger.info("[DRY RUN] Skipping Feishu push and Bitable sync")
 
     logger.info(f"=== Digest complete: {len(papers)} papers ===")
     return {"status": "ok", "date": date_str, "count": len(papers)}
