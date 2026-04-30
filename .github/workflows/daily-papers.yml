@@ -51,9 +51,14 @@ jobs:
           DATE_OVERRIDE: ${{ github.event.inputs.date_override || '' }}
         run: |
           cd src
+          if [ "$DRY_RUN" = "true" ]; then
+            DRY_FLAG="--dry-run"
+          else
+            DRY_FLAG=""
+          fi
           python main.py \
             ${DATE_OVERRIDE:+--date "$DATE_OVERRIDE"} \
-            ${DRY_RUN:+--dry-run}
+            $DRY_FLAG
 
       - name: Commit and push
         if: github.event.inputs.dry_run != 'true'
