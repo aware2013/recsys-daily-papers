@@ -1,12 +1,11 @@
 """飞书 Webhook 通知模块"""
 
-import json
 import logging
 import os
 
 import httpx
 
-from src.config import FEISHU_MAX_PAPERS, FEISHU_MESSAGE_CARD_TITLE, FEISHU_MESSAGE_CARD_COLOR
+from src.config import FEISHU_MAX_PAPERS
 from src.models import DailyDigest
 
 logger = logging.getLogger(__name__)
@@ -24,66 +23,56 @@ def send_notification(digest: DailyDigest) -> bool:
         logger.info("No papers to push")
         return False
 
-    content = _build_markdown(digest, top_papers)
-    payload = {"msg_type": "interactive", "card": _build_card(content, digest)}
+    payload = _build_post_message(digest, top_papers)
 
     try:
         resp = httpx.post(webhook_url, json=payload, timeout=15.0)
+        logger.info(f"Feishu response status={resp.status_code}, body={resp.text[:400]}")
         resp.raise_for_status()
         result = resp.json()
-        if result.get("StatusCode") == 0 or result.get("code") == 0:
+        code = result.get("StatusCode") or result.get("code") or 0
+        msg = result.get("StatusMessage") or result.get("msg") or ""
+        if code == 0:
             logger.info(f"Feishu push OK: {len(top_papers)} papers")
             return True
         else:
-            logger.warning(f"Feishu push returned: {result}")
+            logger.warning(f"Feishu push returned non-zero: code={code}, msg={msg}")
             return False
     except Exception as e:
         logger.error(f"Feishu push failed: {e}")
         return False
 
 
-def _build_markdown(digest: DailyDigest, top_papers) -> str:
+def _build_post_message(digest: DailyDigest, top_papers) -> dict:
+    """构建飞书 post 富文本消息"""
     stars = lambda r: "⭐" * max(1, int(r / 2)) if r else ""
-    lines = [
-        f"## {FEISHU_MESSAGE_CARD_TITLE} | {digest.date}",
-        "",
-        f"今日共收录 **{len(digest.papers)}** 篇论文 ｜ arXiv 来源: {digest.total_candidates} → 精选: {digest.after_dedup} 篇",
-        "",
-        "---",
-        "",
-    ]
+
+    content_lines = []
+    # 标题行
+    content_lines.append([{"tag": "text", "text": f"📢 论文日报 | {digest.date}\n"}])
+    content_lines.append([{"tag": "text", "text": f"今日收录 {len(digest.papers)} 篇 | 来源: arXiv → 精选 {digest.after_dedup} 篇\n\n"}])
 
     for i, paper in enumerate(top_papers, 1):
+        title = paper.cn_title or paper.title
+        if len(title) > 80:
+            title = title[:77] + "..."
         rating_text = f"{paper.rating:.1f} {stars(paper.rating)}" if paper.rating else "—"
-        lines.extend([
-            f"### {i}. {paper.cn_title or paper.title}",
-            f"**分类**: {paper.category or '其他'} ｜ **评分**: {rating_text}",
-            f"**一句话**: {paper.one_sentence or '暂无'}",
-            f"[📄 arXiv]({paper.abs_url}) | [📥 PDF]({paper.pdf_url})",
-            "",
+        one_line = paper.one_sentence or "暂无简介"
+
+        content_lines.append([
+            {"tag": "text", "text": f"{i}. "},
+            {"tag": "a", "text": title, "href": paper.abs_url},
+            {"tag": "text", "text": f"\n   分类: {paper.category or '其他'} | 评分: {rating_text}\n   {one_line}\n\n"},
         ])
 
-    repo_url = os.environ.get("GITHUB_REPOSITORY", "")
-    if repo_url:
-        lines.append(f"[📖 全部详情](https://github.com/{repo_url}/tree/main/papers)")
-
-    return "\n".join(lines)
-
-
-def _build_card(markdown_content: str, digest: DailyDigest) -> dict:
     return {
-        "config": {"wide_screen_mode": True},
-        "header": {
-            "title": {"tag": "plain_text", "content": f"论文日报 | {digest.date}"},
-            "template": FEISHU_MESSAGE_CARD_COLOR,
+        "msg_type": "post",
+        "content": {
+            "post": {
+                "zh_cn": {
+                    "title": f"论文日报 | {digest.date}",
+                    "content": content_lines,
+                }
+            }
         },
-        "elements": [
-            {"tag": "markdown", "content": markdown_content},
-            {
-                "tag": "note",
-                "elements": [
-                    {"tag": "plain_text", "content": f"🤖 自动生成于 {digest.generated_at} | Powered by arXiv + Gemini"}
-                ],
-            },
-        ],
     }
