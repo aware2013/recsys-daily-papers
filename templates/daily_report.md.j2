@@ -1,0 +1,67 @@
+# 📚 推荐系统论文日报 | {{ date }}
+
+> 共收录 **{{ papers|length }}** 篇论文 | 数据来源: arXiv + Semantic Scholar | 生成时间: {{ generated_at }}
+>
+> 候选: {{ total_candidates }} → 过滤后: {{ after_filter }} → 精选: {{ after_dedup }}
+
+---
+
+## 🏆 今日 Top 3
+
+| # | 标题 | 分类 | 评分 |
+|---|------|------|------|
+{% for p in top3 %}
+| {{ loop.index }} | {{ p.cn_title or p.title }} | {{ p.category or '其他' }} | ⭐ {{ "%.1f"|format(p.rating) }} |
+{% endfor %}
+
+---
+
+## 📊 分类分布
+
+{% for cat, group in category_groups.items() %}
+- **{{ cat }}**: {{ group|length }} 篇
+{% endfor %}
+
+---
+
+## 📄 论文详情
+
+{% for p in papers %}
+### {{ loop.index }}. {{ p.cn_title or p.title }}
+
+| 属性 | 内容 |
+|------|------|
+| **英文标题** | {{ p.title }} |
+| **分类** | {{ p.category or '其他' }} |
+| **评分** | {{ "%.1f"|format(p.rating) }}/10 {{ stars(p.rating) }} |
+| **作者** | {{ p.authors[:5]|join(', ') }}{% if p.authors|length > 5 %} et al.{% endif %} |
+| **arXiv** | [{{ p.arxiv_id }}]({{ p.abs_url }}) |
+| **PDF** | [下载]({{ p.pdf_url }}) |
+| **引用数** | {{ p.citation_count }} |
+{% if p.published %}
+| **发布时间** | {{ p.published.strftime('%Y-%m-%d') }} |
+{% endif %}
+
+**中文摘要**：
+{{ p.cn_summary or '（暂无中文摘要）' }}
+
+{% if p.highlights %}
+**核心贡献**：
+{% for h in p.highlights %}
+- {{ h }}
+{% endfor %}
+{% endif %}
+
+{% if p.applicable_scenarios %}
+**适用场景**：{{ p.applicable_scenarios }}
+{% endif %}
+
+{% if p.one_sentence %}
+> 💡 {{ p.one_sentence }}
+{% endif %}
+
+---
+
+{% endfor %}
+
+*🤖 本日报由 recsys-daily-papers 自动生成 | Powered by arXiv + Gemini*

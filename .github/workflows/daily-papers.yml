@@ -1,0 +1,66 @@
+name: Daily Recommendation Papers Digest
+
+on:
+  schedule:
+    # 北京时间每天 9:00 (UTC 1:00)
+    - cron: '0 1 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run (no push, no feishu)'
+        required: true
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+      date_override:
+        description: 'Override date (YYYY-MM-DD)'
+        required: false
+        default: ''
+        type: string
+
+env:
+  PYTHON_VERSION: '3.12'
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt --quiet
+
+      - name: Run pipeline
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}
+          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+          DATE_OVERRIDE: ${{ github.event.inputs.date_override || '' }}
+        run: |
+          cd src
+          python main.py \
+            ${DATE_OVERRIDE:+--date "$DATE_OVERRIDE"} \
+            ${DRY_RUN:+--dry-run}
+
+      - name: Commit and push
+        if: github.event.inputs.dry_run != 'true'
+        run: |
+          git config user.name "recsys-bot"
+          git config user.email "bot@recsys-daily.example.com"
+          git add papers/ data/ docs/
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "docs: daily papers digest $(date +%Y-%m-%d)"
+            git push
+          fi
