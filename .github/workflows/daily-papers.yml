@@ -45,7 +45,7 @@ jobs:
 
       - name: Run pipeline
         env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}
           DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
           DATE_OVERRIDE: ${{ github.event.inputs.date_override || '' }}

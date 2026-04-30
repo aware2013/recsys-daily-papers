@@ -1,4 +1,4 @@
-"""Gemini LLM 处理器：中文摘要、分类、评分。失败时降级为关键词方案"""
+"""DeepSeek LLM 处理器：中文摘要、分类、评分。失败时降级为关键词方案"""
 
 import json
 import logging
@@ -7,8 +7,9 @@ import re
 import time
 from typing import List
 
+import httpx
+
 from src.config import (
-    GEMINI_MODEL,
     GEMINI_TEMPERATURE,
     GEMINI_MAX_TOKENS,
     SYSTEM_PROMPT,
@@ -19,94 +20,86 @@ from src.models import Paper
 
 logger = logging.getLogger(__name__)
 
+DEEPSEEK_BASE = "https://api.deepseek.com/v1"
+DEEPSEEK_MODEL = "deepseek-chat"
 MAX_RETRIES = 3
-INITIAL_BACKOFF = 5.0  # 秒
-CALL_DELAY = 2.0  # 每次调用间隔
+CALL_DELAY = 1.0  # DeepSeek 不限流，短间隔即可
 
 
 def process_papers(papers: List[Paper]) -> List[Paper]:
     """主入口：调用 LLM 处理论文列表"""
-    api_key = os.environ.get("GEMINI_API_KEY", "")
+    api_key = os.environ.get("DEEPSEEK_API_KEY", "")
     if not api_key or not papers:
         if not api_key:
-            logger.warning("GEMINI_API_KEY not set, using keyword fallback")
+            logger.warning("DEEPSEEK_API_KEY not set, using keyword fallback")
         return _fallback_process(papers)
 
-    try:
-        from google import genai
+    results = []
+    success_count = 0
+    fail_count = 0
 
-        client = genai.Client(api_key=api_key)
-        results = []
-        success_count = 0
-        fail_count = 0
+    for paper in papers:
+        result = _call_with_retry(api_key, paper)
+        if result:
+            results.append(_apply_result(paper, result))
+            success_count += 1
+        else:
+            results.append(_fallback_single(paper))
+            fail_count += 1
+        time.sleep(CALL_DELAY)
 
-        for paper in papers:
-            result = _call_with_retry(client, paper)
-            if result:
-                results.append(_apply_result(paper, result))
-                success_count += 1
-            else:
-                results.append(_fallback_single(paper))
-                fail_count += 1
-            # 请求间延迟
-            time.sleep(CALL_DELAY)
-
-        logger.info(f"LLM processed: {success_count} succeeded, {fail_count} fallback")
-        return results
-
-    except ImportError:
-        logger.warning("google-genai not installed, using keyword fallback")
-        return _fallback_process(papers)
-    except Exception as e:
-        logger.error(f"Gemini API unreachable: {e}, using keyword fallback")
-        return _fallback_process(papers)
+    logger.info(f"DeepSeek processed: {success_count} succeeded, {fail_count} fallback")
+    return results
 
 
-def _call_with_retry(client, paper: Paper) -> dict | None:
-    """带指数退避重试的 Gemini 调用"""
+def _call_with_retry(api_key: str, paper: Paper) -> dict | None:
     for attempt in range(MAX_RETRIES):
         try:
-            return _call_gemini(client, paper)
+            return _call_deepseek(api_key, paper)
         except Exception as e:
-            error_msg = str(e).lower()
-            is_rate_limit = "429" in str(e) or "resource_exhausted" in error_msg
-
             if attempt < MAX_RETRIES - 1:
-                wait = INITIAL_BACKOFF * (2 ** attempt) + (time.time() % 3)
-                if is_rate_limit:
-                    wait = max(wait, 10.0)  # 限流时至少等10秒
+                wait = 3.0 * (2 ** attempt)
                 logger.warning(
-                    f"Gemini {paper.arxiv_id}: attempt {attempt + 1} failed "
-                    f"({'rate limit' if is_rate_limit else 'error'}), "
+                    f"DeepSeek {paper.arxiv_id}: attempt {attempt + 1} failed, "
                     f"retrying in {wait:.1f}s... ({e})"
                 )
                 time.sleep(wait)
             else:
-                logger.error(f"Gemini {paper.arxiv_id}: all {MAX_RETRIES} attempts failed: {e}")
+                logger.error(f"DeepSeek {paper.arxiv_id}: all attempts failed: {e}")
                 return None
-
     return None
 
 
-def _call_gemini(client, paper: Paper) -> dict:
+def _call_deepseek(api_key: str, paper: Paper) -> dict:
     user_text = f"标题: {paper.title}\n摘要: {paper.abstract}"
     prompt = f"{SYSTEM_PROMPT}\n\n论文信息：\n{user_text}"
 
-    response = client.models.generate_content(
-        model=GEMINI_MODEL,
-        contents=prompt,
-        config={
-            "temperature": GEMINI_TEMPERATURE,
-            "max_output_tokens": GEMINI_MAX_TOKENS,
+    resp = httpx.post(
+        f"{DEEPSEEK_BASE}/chat/completions",
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
         },
+        json={
+            "model": DEEPSEEK_MODEL,
+            "messages": [
+                {"role": "user", "content": prompt},
+            ],
+            "temperature": GEMINI_TEMPERATURE,
+            "max_tokens": GEMINI_MAX_TOKENS,
+            "stream": False,
+        },
+        timeout=60.0,
     )
+    resp.raise_for_status()
 
-    text = response.text.strip()
-    # 提取 JSON（可能被 markdown 包裹）
+    data = resp.json()
+    text = data["choices"][0]["message"]["content"].strip()
+
+    # 提取 JSON
     json_match = re.search(r"\{[\s\S]*\}", text)
     if json_match:
         return json.loads(json_match.group(0))
-
     return json.loads(text)
 
 
@@ -126,7 +119,6 @@ def _fallback_process(papers: List[Paper]) -> List[Paper]:
 
 
 def _fallback_single(paper: Paper) -> Paper:
-    """降级方案：关键词匹配分类 + 摘要截取"""
     paper.cn_title = paper.title
     sentences = paper.abstract.split(". ")
     paper.cn_summary = ". ".join(sentences[:2]).rstrip(".") + "."
