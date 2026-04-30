@@ -3,16 +3,14 @@
 import json
 import logging
 import os
-import asyncio
 import re
+import time
 from typing import List
 
 from src.config import (
     GEMINI_MODEL,
     GEMINI_TEMPERATURE,
     GEMINI_MAX_TOKENS,
-    GEMINI_RPM_LIMIT,
-    GEMINI_BATCH_SIZE,
     SYSTEM_PROMPT,
     PAPER_CATEGORIES,
     FALLBACK_CATEGORY,
@@ -20,6 +18,10 @@ from src.config import (
 from src.models import Paper
 
 logger = logging.getLogger(__name__)
+
+MAX_RETRIES = 3
+INITIAL_BACKOFF = 5.0  # 秒
+CALL_DELAY = 2.0  # 每次调用间隔
 
 
 def process_papers(papers: List[Paper]) -> List[Paper]:
@@ -35,18 +37,21 @@ def process_papers(papers: List[Paper]) -> List[Paper]:
 
         client = genai.Client(api_key=api_key)
         results = []
+        success_count = 0
+        fail_count = 0
 
-        for i in range(0, len(papers), GEMINI_BATCH_SIZE):
-            batch = papers[i : i + GEMINI_BATCH_SIZE]
-            for paper in batch:
-                try:
-                    result = _call_gemini(client, paper)
-                    results.append(_apply_result(paper, result))
-                except Exception as e:
-                    logger.warning(f"Gemini failed for {paper.arxiv_id}: {e}")
-                    results.append(_fallback_single(paper))
+        for paper in papers:
+            result = _call_with_retry(client, paper)
+            if result:
+                results.append(_apply_result(paper, result))
+                success_count += 1
+            else:
+                results.append(_fallback_single(paper))
+                fail_count += 1
+            # 请求间延迟
+            time.sleep(CALL_DELAY)
 
-        logger.info(f"LLM processed: {len(papers)} papers")
+        logger.info(f"LLM processed: {success_count} succeeded, {fail_count} fallback")
         return results
 
     except ImportError:
@@ -57,12 +62,35 @@ def process_papers(papers: List[Paper]) -> List[Paper]:
         return _fallback_process(papers)
 
 
+def _call_with_retry(client, paper: Paper) -> dict | None:
+    """带指数退避重试的 Gemini 调用"""
+    for attempt in range(MAX_RETRIES):
+        try:
+            return _call_gemini(client, paper)
+        except Exception as e:
+            error_msg = str(e).lower()
+            is_rate_limit = "429" in str(e) or "resource_exhausted" in error_msg
+
+            if attempt < MAX_RETRIES - 1:
+                wait = INITIAL_BACKOFF * (2 ** attempt) + (time.time() % 3)
+                if is_rate_limit:
+                    wait = max(wait, 10.0)  # 限流时至少等10秒
+                logger.warning(
+                    f"Gemini {paper.arxiv_id}: attempt {attempt + 1} failed "
+                    f"({'rate limit' if is_rate_limit else 'error'}), "
+                    f"retrying in {wait:.1f}s... ({e})"
+                )
+                time.sleep(wait)
+            else:
+                logger.error(f"Gemini {paper.arxiv_id}: all {MAX_RETRIES} attempts failed: {e}")
+                return None
+
+    return None
+
+
 def _call_gemini(client, paper: Paper) -> dict:
     user_text = f"标题: {paper.title}\n摘要: {paper.abstract}"
-    prompt = SYSTEM_PROMPT.replace("{titles_and_abstract}", user_text)
-    # fallback: use as normal chat
-    if "{titles_and_abstract}" in prompt:
-        prompt = f"{SYSTEM_PROMPT}\n\n论文信息：\n{user_text}"
+    prompt = f"{SYSTEM_PROMPT}\n\n论文信息：\n{user_text}"
 
     response = client.models.generate_content(
         model=GEMINI_MODEL,
@@ -79,7 +107,6 @@ def _call_gemini(client, paper: Paper) -> dict:
     if json_match:
         return json.loads(json_match.group(0))
 
-    # 尝试直接解析
     return json.loads(text)
 
 
