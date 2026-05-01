@@ -19,26 +19,20 @@ def generate_daily_report(digest: DailyDigest, output_path: str) -> str:
     env = _create_env()
     template = env.get_template("daily_report.md.j2")
 
-    # 按分类分组
-    category_groups: dict[str, list] = {}
-    for paper in digest.papers:
-        cat = paper.category or "其他"
-        category_groups.setdefault(cat, []).append(paper)
-
-    top3 = digest.papers[:3]
-    stars = lambda r: "⭐" * int(r / 2) if r else "—"
+    recsys_papers = [p for p in digest.papers if digest.bucket_map.get(p.arxiv_id) == "推荐算法"]
+    growth_papers = [p for p in digest.papers if digest.bucket_map.get(p.arxiv_id) == "营销增长"]
 
     content = template.render(
         date=digest.date,
         total_candidates=digest.total_candidates,
         after_filter=digest.after_filter,
         after_dedup=digest.after_dedup,
-        top3=top3,
         papers=digest.papers,
-        category_groups=category_groups,
+        recsys_papers=recsys_papers,
+        growth_papers=growth_papers,
+        recsys_count=len(recsys_papers),
+        growth_count=len(growth_papers),
         generated_at=digest.generated_at or datetime.now().strftime("%Y-%m-%d %H:%M"),
-        stars=stars,
-        enumerate=enumerate,
     )
 
     path = Path(output_path)

@@ -7,10 +7,10 @@ import os
 import sys
 from datetime import datetime
 
-# 确保项目根在 path 中
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.models import DailyDigest
+from src.config import get_bucket, PAPERS_PER_BUCKET
 from src.fetcher.arxiv_fetcher import fetch_papers
 from src.fetcher.semantic_scholar import enrich_papers
 from src.processor.filter import filter_papers, save_processed_ids
@@ -36,7 +36,7 @@ def run(date_str: str = "", dry_run: bool = False):
     logger.info(f"=== Starting daily digest for {date_str} ===")
 
     # Step 1: Fetch
-    logger.info("[1/6] Fetching papers from arXiv...")
+    logger.info("[1/7] Fetching papers from arXiv...")
     papers = fetch_papers()
     total_candidates = len(papers)
     if not papers:
@@ -44,51 +44,63 @@ def run(date_str: str = "", dry_run: bool = False):
         return {"status": "empty", "date": date_str}
 
     # Step 2: Filter
-    logger.info("[2/6] Filtering & deduplicating...")
+    logger.info("[2/7] Filtering & deduplicating...")
     papers = filter_papers(papers, PROCESSED_IDS_FILE)
     after_filter = len(papers)
 
     # Step 3: Enrich
-    logger.info("[3/6] Enriching with Semantic Scholar...")
+    logger.info("[3/7] Enriching with Semantic Scholar...")
     papers = enrich_papers(papers)
 
     # Step 4: LLM Process
-    logger.info("[4/6] LLM summarization & classification...")
+    logger.info("[4/7] LLM summarization & classification...")
     papers = llm_process(papers)
 
-    # Step 5: Rank
-    logger.info("[5/6] Ranking papers...")
-    papers = rank_papers(papers)
+    # Step 5: Split into buckets
+    logger.info("[5/7] Splitting papers into buckets...")
+    bucket_map = {}
+    for p in papers:
+        bucket_map[p.arxiv_id] = get_bucket(p.category)
 
-    # Step 6: Generate outputs
-    logger.info("[6/6] Generating outputs...")
+    recsys_papers = [p for p in papers if bucket_map[p.arxiv_id] == "推荐算法"]
+    growth_papers = [p for p in papers if bucket_map[p.arxiv_id] == "营销增长"]
+
+    # Step 6: Rank each bucket separately
+    logger.info("[6/7] Ranking each bucket...")
+    recsys_papers = rank_papers(recsys_papers)[:PAPERS_PER_BUCKET]
+    growth_papers = rank_papers(growth_papers)[:PAPERS_PER_BUCKET]
+
+    all_papers = recsys_papers + growth_papers
+
+    # Step 7: Generate outputs
+    logger.info("[7/7] Generating outputs...")
     digest = DailyDigest(
         date=date_str,
         total_candidates=total_candidates,
         after_filter=after_filter,
-        after_dedup=len(papers),
-        papers=papers,
+        after_dedup=len(all_papers),
+        papers=all_papers,
+        bucket_map=bucket_map,
         generated_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     )
+    digest.stats = {"推荐算法": len(recsys_papers), "营销增长": len(growth_papers)}
 
     year_month = date_str[:7].replace("-", "/")
     report_path = os.path.join(PAPERS_DIR, year_month, f"{date_str[-2:]}.md")
     generate_daily_report(digest, report_path)
     update_index(digest, INDEX_PATH)
 
-    # 记录已处理
-    ids = [p.arxiv_id for p in papers]
+    ids = [p.arxiv_id for p in all_papers]
     save_processed_ids(PROCESSED_IDS_FILE, ids)
 
-    # 飞书推送
     if not dry_run:
         send_notification(digest)
-        sync_to_bitable(papers, date_str)
+        sync_to_bitable(all_papers, bucket_map, date_str)
     else:
         logger.info("[DRY RUN] Skipping Feishu push and Bitable sync")
 
-    logger.info(f"=== Digest complete: {len(papers)} papers ===")
-    return {"status": "ok", "date": date_str, "count": len(papers)}
+    logger.info(f"=== Digest complete: 推荐算法 {len(recsys_papers)} + 营销增长 {len(growth_papers)} = {len(all_papers)} papers ===")
+    return {"status": "ok", "date": date_str, "推荐算法": len(recsys_papers), "营销增长": len(growth_papers)}
 
 
 if __name__ == "__main__":

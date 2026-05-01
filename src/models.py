@@ -39,5 +39,6 @@ class DailyDigest:
     after_filter: int = 0
     after_dedup: int = 0
     papers: List[Paper] = field(default_factory=list)
+    bucket_map: dict = field(default_factory=dict)  # arxiv_id → "推荐算法" | "营销增长"
     generated_at: str = ""
     stats: dict = field(default_factory=dict)

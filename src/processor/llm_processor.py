@@ -111,6 +111,10 @@ def _apply_result(paper: Paper, result: dict) -> Paper:
     paper.rating = float(result.get("rating", 5.0))
     paper.one_sentence = result.get("one_sentence", "")
     paper.applicable_scenarios = result.get("applicable_scenarios", "")
+    # LLM 推断的作者单位优先于 S2 数据
+    llm_affil = result.get("affiliations", "")
+    if llm_affil and llm_affil != "未知":
+        paper.affiliations = llm_affil
     return paper
 
 

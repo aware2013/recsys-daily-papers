@@ -64,8 +64,20 @@ PAPER_CATEGORIES = {
 
 FALLBACK_CATEGORY = "其他"
 
+# 分类 → 大桶映射
+RECSYS_CATEGORIES = ["协同过滤", "序列推荐", "CTR预估", "图神经网络", "大模型推荐", "多模态推荐", "强化学习推荐", "召回与排序", "冷启动", "可解释性", "公平性与去偏", "跨域推荐", "联邦推荐"]
+
+GROWTH_CATEGORIES = ["智能发券", "补贴策略", "用户增长", "定价优化", "营销归因", "促销推荐"]
+
+def get_bucket(category: str) -> str:
+    if category in RECSYS_CATEGORIES:
+        return "推荐算法"
+    if category in GROWTH_CATEGORIES:
+        return "营销增长"
+    return "营销增长"  # 兜底归入营销增长
+
 # ============================================================
-# Gemini LLM 配置
+# LLM 配置
 # ============================================================
 
 GEMINI_MODEL = "gemini-2.0-flash"
@@ -84,6 +96,7 @@ SYSTEM_PROMPT = """你是一个推荐系统与营销增长领域的资深研究�
 5. 综合新颖性和实用性，给出评分（1-10分，其中10=范式级突破，7-9=重要进展，4-6=渐进改进，1-3=意义有限）
 6. 一句话推荐理由（说明为什么值得阅读）
 7. 适用的业务场景（如：短视频推荐、电商搜索、外卖配送、优惠券分配等）
+8. 推断作者所属机构/公司（根据作者信息、邮箱后缀、论文风格等推断，如"Alibaba Group""Tsinghua University""Google Research"等，多个机构用逗号分隔；如果无法推断，填"未知"）
 
 可选的分类列表：协同过滤、序列推荐、CTR预估、图神经网络、大模型推荐、多模态推荐、强化学习推荐、召回与排序、冷启动、可解释性、公平性与去偏、跨域推荐、联邦推荐、智能发券、补贴策略、用户增长、定价优化、营销归因、促销推荐
 
@@ -95,7 +108,8 @@ SYSTEM_PROMPT = """你是一个推荐系统与营销增长领域的资深研究�
   "highlights": ["...", "..."],
   "rating": 0.0,
   "one_sentence": "...",
-  "applicable_scenarios": "..."
+  "applicable_scenarios": "...",
+  "affiliations": "..."
 }
 """
 
@@ -118,12 +132,5 @@ MAX_CITATION_SCORE = 50
 # 输出配置
 # ============================================================
 
-PAPERS_PER_DIGEST = 20
-FEISHU_MAX_PAPERS = 8
-
-# ============================================================
-# 飞书配置
-# ============================================================
-
-FEISHU_MESSAGE_CARD_TITLE = "📢 论文日报"
-FEISHU_MESSAGE_CARD_COLOR = "#1890ff"
+PAPERS_PER_BUCKET = 10      # 每个桶保留篇数（写入文档）
+FEISHU_MAX_PER_BUCKET = 5   # 每个桶推送飞书群篇数
