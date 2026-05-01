@@ -1,6 +1,7 @@
 """arXiv API 论文获取"""
 
 import logging
+import re
 from datetime import datetime, timedelta, timezone
 from typing import List
 
@@ -51,6 +52,7 @@ def fetch_papers() -> List[Paper]:
                     updated=updated,
                     pdf_url=result.pdf_url,
                     abs_url=result.entry_id,
+                    code_url=_extract_code_url(result.comment or ""),
                 )
                 all_papers[arxiv_id] = paper
 
@@ -86,6 +88,7 @@ def fetch_papers() -> List[Paper]:
                         updated=updated,
                         pdf_url=result.pdf_url,
                         abs_url=result.entry_id,
+                        code_url=_extract_code_url(result.comment or ""),
                     )
                     all_papers[arxiv_id] = paper
             except Exception as e:
@@ -100,3 +103,21 @@ def _extract_id(entry_id: str) -> str:
     """从 arXiv entry_id 提取纯 ID"""
     # http://arxiv.org/abs/2301.12345v2 → 2301.12345
     return entry_id.split("/")[-1].split("v")[0]
+
+
+def _extract_code_url(comment: str) -> str:
+    """从 arXiv comment 字段提取源码链接"""
+    if not comment:
+        return ""
+    # 匹配 GitHub / GitLab / Bitbucket / 通用 URL
+    patterns = [
+        r'(?:code|github|implementation|source)\s+(?:available|at|:|：)\s*(https?://[^\s]+)',
+        r'(https?://github\.com/[^\s]+)',
+        r'(https?://gitlab\.com/[^\s]+)',
+        r'(https?://bitbucket\.org/[^\s]+)',
+    ]
+    for pat in patterns:
+        m = re.search(pat, comment, re.IGNORECASE)
+        if m:
+            return m.group(1).rstrip(".,;)")
+    return ""

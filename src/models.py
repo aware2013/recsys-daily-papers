@@ -21,6 +21,7 @@ class Paper:
     citation_count: int = 0
     influential_citation_count: int = 0
     affiliations: str = ""  # 作者单位（如 "Alibaba Group, Tsinghua University"）
+    code_url: str = ""  # 源码链接（从 arXiv comment 提取）
 
     # LLM 处理结果 (中文)
     cn_title: str = ""

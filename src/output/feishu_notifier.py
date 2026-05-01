@@ -42,9 +42,10 @@ def _send_card(webhook_url: str, date: str, label: str, papers: list, color: str
             title = title[:57] + "..."
         rating_text = f"{p.rating:.1f} {stars(p.rating)}" if p.rating else "—"
         affil = f" | {p.affiliations}" if p.affiliations and p.affiliations != "—" else ""
+        code_line = f"\n📦 [源码]({p.code_url})" if p.code_url else ""
         md += (
             f"**{i}. [{title}]({p.abs_url})**\n"
-            f"{p.category or '其他'} ｜ 评分 {rating_text}{affil}\n"
+            f"{p.category or '其他'} ｜ 评分 {rating_text}{affil}{code_line}\n"
             f"{p.one_sentence or '暂无简介'}\n\n"
         )
 

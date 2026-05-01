@@ -26,6 +26,7 @@ TABLE_FIELDS = [
     {"field_name": "arXiv", "type": 15},
     {"field_name": "作者", "type": 1},
     {"field_name": "作者单位", "type": 1},
+    {"field_name": "源码", "type": 15},  # url
 ]
 
 TABLE_NAMES = {"推荐算法": "📊 推荐算法", "营销增长": "📈 营销增长"}
@@ -143,6 +144,7 @@ def _build_records(papers: List[Paper], date_str: str) -> List[dict]:
                 "arXiv": {"link": p.abs_url, "text": p.arxiv_id},
                 "作者": ", ".join(p.authors[:3]) + (f" et al.({len(p.authors)})" if len(p.authors) > 3 else ""),
                 "作者单位": p.affiliations or "—",
+                "源码": {"link": p.code_url, "text": "🔗 GitHub"} if p.code_url else None,
             }
         })
     return records
