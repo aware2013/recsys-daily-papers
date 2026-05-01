@@ -6,13 +6,14 @@ import os
 import httpx
 
 from src.config import FEISHU_MAX_PER_BUCKET
-from src.models import DailyDigest, Paper
+from src.models import DailyDigest
 
 logger = logging.getLogger(__name__)
 
+COLORS = {"推荐算法": "blue", "营销增长": "green"}
+
 
 def send_notification(digest: DailyDigest) -> bool:
-    """分别推送推荐算法和营销增长论文"""
     webhook_url = os.environ.get("FEISHU_WEBHOOK_URL", "")
     if not webhook_url:
         logger.warning("FEISHU_WEBHOOK_URL not set, skipping push")
@@ -23,81 +24,47 @@ def send_notification(digest: DailyDigest) -> bool:
 
     ok = True
     if recsys:
-        ok &= _send(webhook_url, digest.date, "🤖 推荐算法", recsys[:FEISHU_MAX_PER_BUCKET])
+        ok &= _send_card(webhook_url, digest.date, "🤖 推荐算法", recsys[:FEISHU_MAX_PER_BUCKET], "blue")
     if growth:
-        ok &= _send(webhook_url, digest.date, "📈 营销增长", growth[:FEISHU_MAX_PER_BUCKET])
+        ok &= _send_card(webhook_url, digest.date, "📈 营销增长", growth[:FEISHU_MAX_PER_BUCKET], "green")
 
     return ok
 
 
-def _send(webhook_url: str, date: str, label: str, papers: list) -> bool:
+def _send_card(webhook_url: str, date: str, label: str, papers: list, color: str) -> bool:
     stars = lambda r: "⭐" * max(1, int(r / 2)) if r else ""
-    lines = [
-        f"## {label} 论文日报 | {date}",
-        "",
-        f"今日精选 **{len(papers)}** 篇",
-        "",
-        "---",
-        "",
-    ]
+
+    md = f"**{label} 论文日报 | {date}**\n\n今日精选 **{len(papers)}** 篇\n\n---\n\n"
 
     for i, p in enumerate(papers, 1):
         title = p.cn_title or p.title
-        if len(title) > 80:
-            title = title[:77] + "..."
+        if len(title) > 60:
+            title = title[:57] + "..."
         rating_text = f"{p.rating:.1f} {stars(p.rating)}" if p.rating else "—"
-        lines.extend([
-            f"### {i}. {title}",
-            f"**分类**: {p.category or '其他'} ｜ **评分**: {rating_text}",
-            f"**一句话**: {p.one_sentence or '暂无'}",
-            f"[📄 arXiv]({p.abs_url}) | [📥 PDF]({p.pdf_url})",
-            "",
-        ])
+        affil = f" | {p.affiliations}" if p.affiliations and p.affiliations != "—" else ""
+        md += (
+            f"**{i}. [{title}]({p.abs_url})**\n"
+            f"{p.category or '其他'} ｜ 评分 {rating_text}{affil}\n"
+            f"{p.one_sentence or '暂无简介'}\n\n"
+        )
 
     payload = {
-        "msg_type": "post",
-        "content": {
-            "post": {
-                "zh_cn": {
-                    "title": f"{label} 论文日报 | {date}",
-                    "content": [[{"tag": "text", "text": line}] if not line.startswith("###") else [
-                        {"tag": "text", "text": line}
-                    ] for line in lines if line],
-                }
-            }
+        "msg_type": "interactive",
+        "card": {
+            "config": {"wide_screen_mode": True},
+            "header": {
+                "title": {"tag": "plain_text", "content": f"{label} 论文日报 | {date}"},
+                "template": color,
+            },
+            "elements": [
+                {"tag": "markdown", "content": md},
+                {"tag": "note", "elements": [{"tag": "plain_text", "content": f"每日 {len(papers)} 篇精选 · Powered by arXiv + DeepSeek"}]},
+            ],
         },
     }
 
-    # 转换为飞书 post 格式
-    post_content = []
-    for line in lines:
-        if not line:
-            continue
-        if line.startswith("### "):
-            post_content.append([{"tag": "text", "text": line[4:] + "\n"}])
-        elif line.startswith("**"):
-            post_content.append([{"tag": "text", "text": line + "\n"}])
-        elif line.startswith("[📄"):
-            post_content.append([{"tag": "text", "text": line + "\n"}])
-        elif line.startswith("---"):
-            post_content.append([{"tag": "text", "text": "———\n"}])
-        elif line.startswith("## "):
-            post_content.append([{"tag": "text", "text": line[3:] + "\n"}])
-        else:
-            post_content.append([{"tag": "text", "text": line + "\n"}])
-
     try:
-        resp = httpx.post(webhook_url, json={
-            "msg_type": "post",
-            "content": {
-                "post": {
-                    "zh_cn": {
-                        "title": f"{label} 论文日报 | {date}",
-                        "content": post_content,
-                    }
-                }
-            },
-        }, timeout=15.0)
+        resp = httpx.post(webhook_url, json=payload, timeout=15.0)
         logger.info(f"Feishu [{label}] status={resp.status_code}, body={resp.text[:200]}")
         resp.raise_for_status()
         result = resp.json()
