@@ -3,7 +3,7 @@
 import math
 from typing import List
 
-from src.config import RATING_WEIGHTS, CITATION_LOG_BASE, MAX_CITATION_SCORE, PAPERS_PER_DIGEST
+from src.config import RATING_WEIGHTS, CITATION_LOG_BASE, MAX_CITATION_SCORE, PAPERS_PER_BUCKET
 from src.models import Paper
 
 
@@ -47,7 +47,7 @@ def rank_papers(papers: List[Paper]) -> List[Paper]:
         )
 
     papers.sort(key=lambda p: p.rating, reverse=True)
-    return papers[:PAPERS_PER_DIGEST]
+    return papers[:PAPERS_PER_BUCKET]
 
 
 def _novelty_score(paper: Paper) -> float:
