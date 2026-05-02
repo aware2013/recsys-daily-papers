@@ -34,6 +34,7 @@ def send_notification(digest: DailyDigest) -> bool:
 def _send_card(webhook_url: str, date: str, label: str, papers: list, color: str) -> bool:
     stars = lambda r: "⭐" * max(1, int(r / 2)) if r else ""
 
+    bitable_url = os.environ.get("FEISHU_BITABLE_URL", "")
     md = f"**{label} 论文日报 | {date}**\n\n今日精选 **{len(papers)}** 篇\n\n---\n\n"
 
     for i, p in enumerate(papers, 1):
@@ -49,6 +50,15 @@ def _send_card(webhook_url: str, date: str, label: str, papers: list, color: str
             f"{p.one_sentence or '暂无简介'}\n\n"
         )
 
+    if bitable_url:
+        md += f"\n📊 [查看完整文档]({bitable_url})"
+
+    elements = [{"tag": "markdown", "content": md}]
+    note_text = f"每日 {len(papers)} 篇精选 · Powered by arXiv + DeepSeek"
+    if bitable_url:
+        note_text += f" · 文档链接已在消息中"
+    elements.append({"tag": "note", "elements": [{"tag": "plain_text", "content": note_text}]})
+
     payload = {
         "msg_type": "interactive",
         "card": {
@@ -57,10 +67,7 @@ def _send_card(webhook_url: str, date: str, label: str, papers: list, color: str
                 "title": {"tag": "plain_text", "content": f"{label} 论文日报 | {date}"},
                 "template": color,
             },
-            "elements": [
-                {"tag": "markdown", "content": md},
-                {"tag": "note", "elements": [{"tag": "plain_text", "content": f"每日 {len(papers)} 篇精选 · Powered by arXiv + DeepSeek"}]},
-            ],
+            "elements": elements,
         },
     }
 

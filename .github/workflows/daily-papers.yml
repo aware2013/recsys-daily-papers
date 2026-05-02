@@ -50,6 +50,7 @@ jobs:
           FEISHU_APP_ID: ${{ secrets.FEISHU_APP_ID }}
           FEISHU_APP_SECRET: ${{ secrets.FEISHU_APP_SECRET }}
           FEISHU_BITABLE_APP_TOKEN: ${{ secrets.FEISHU_BITABLE_APP_TOKEN }}
+          FEISHU_BITABLE_URL: ${{ secrets.FEISHU_BITABLE_URL }}
           DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
           DATE_OVERRIDE: ${{ github.event.inputs.date_override || '' }}
         run: |
