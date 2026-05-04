@@ -34,7 +34,10 @@ def fetch_papers() -> List[Paper]:
 
             for result in client.results(search):
                 # 仅保留最近 N 小时内更新的论文
-                updated = result.updated.replace(tzinfo=timezone.utc)
+                ts = result.updated or result.published
+                if ts is None:
+                    continue
+                updated = ts.replace(tzinfo=timezone.utc)
                 if updated < cutoff:
                     continue
 
@@ -42,13 +45,14 @@ def fetch_papers() -> List[Paper]:
                     continue
 
                 arxiv_id = _extract_id(result.entry_id)
+                pub_ts = result.published.replace(tzinfo=timezone.utc) if result.published else None
                 paper = Paper(
                     arxiv_id=arxiv_id,
                     title=result.title.strip(),
                     authors=[a.name for a in result.authors],
                     abstract=result.summary.strip(),
                     categories=[c for c in result.categories],
-                    published=result.published.replace(tzinfo=timezone.utc) if result.published else None,
+                    published=pub_ts,
                     updated=updated,
                     pdf_url=result.pdf_url,
                     abs_url=result.entry_id,
@@ -72,7 +76,10 @@ def fetch_papers() -> List[Paper]:
                     sort_order=arxiv.SortOrder.Descending,
                 )
                 for result in client.results(search):
-                    updated = result.updated.replace(tzinfo=timezone.utc)
+                    ts = result.updated or result.published
+                    if ts is None:
+                        continue
+                    updated = ts.replace(tzinfo=timezone.utc)
                     if updated < cutoff:
                         continue
                     arxiv_id = _extract_id(result.entry_id)
