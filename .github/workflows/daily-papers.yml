@@ -69,7 +69,7 @@ jobs:
         run: |
           git config user.name "recsys-bot"
           git config user.email "bot@recsys-daily.example.com"
-          git add papers/ data/ docs/
+          for d in papers data docs; do [ -d "$d" ] && git add "$d/" 2>/dev/null || true; done
           if git diff --cached --quiet; then
             echo "No changes to commit"
           else

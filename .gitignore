@@ -9,10 +9,6 @@ venv/
 .vscode/
 .idea/
 
-# Data
-data/processed_ids.yaml
-data/stats.yaml
-
 # OS
 .DS_Store
 Thumbs.db
