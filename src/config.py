@@ -31,7 +31,7 @@ GROWTH_KEYWORDS = [
     "personalized pricing", "price elasticity",
 ]
 
-LOOKBACK_HOURS = 48
+LOOKBACK_HOURS = 72
 MAX_RESULTS_PER_CATEGORY = 100
 ARXIV_DELAY_SECONDS = 3.0
 
